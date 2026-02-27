@@ -12,15 +12,24 @@ void setup()
   pinMode(A0, INPUT); //potentiometer reading pin
 }
 
+int STOPPED_DEADBAND = 30;
+
 void loop()
 {
   int potValue = analogRead(A0); //potentiometer reading
   int speed = map(potValue, 0, 1023, -255, 255); 
   
+  //speed deadband
+  if (speed > -STOPPED_DEADBAND && speed < STOPPED_DEADBAND) {
+    speed = 0;
+  }
+
+
   //maps analog to digital range 0-1023 to -255 to 255
   Serial.println(speed);//debug
   if (speed > 0)
   {
+    speed -= STOPPED_DEADBAND;
     digitalWrite(4, LOW); //Idle LED deactivates
     digitalWrite(5, LOW); //extend actuator motor forward
     digitalWrite(2, LOW); //Backward LED deactivates
@@ -29,6 +38,7 @@ void loop()
   }
   else if (speed < 0)
   {
+    speed += STOPPED_DEADBAND;
     digitalWrite(4, LOW);  //Idle LED deactivates
     digitalWrite(5, HIGH); //retract actuator motorbackward
     digitalWrite(3, LOW);  //Forward LED deactivates
