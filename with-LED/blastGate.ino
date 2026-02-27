@@ -7,14 +7,29 @@ enum motorPos {START, POS25, POS50, POS75, POS100} state, prevState;
 volatile bool isNewState; //checks if state changes
 volatile bool estopPressed = false;  //estop state
 
+void estopISR() //handler for estop interrupt
+{
+  estopPressed = true; //triggers interrupt flag
+}
+
+void motorExtend()
+{
+  digitalWrite(5, LOW); 
+  digitalWrite(6, HIGH); //extends motor forward
+}
+void motorRetract()
+{
+  digitalWrite(5, HIGH); //retracts motor backward
+  digitalWrite(6, LOW); 
+}
 void setup()
 {
   Serial.begin(115200); //baud rate of ESP32
   pinMode(2, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
   attachInterrupt(digitalPinToInterrupt(2), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
-  pinMode(10, OUTPUT); //LED Backward RED //** Probably have to 
-  pinMode(11, OUTPUT); //LED Forward YELLOW
-  pinMode(12, OUTPUT); //LED Idle GREEN
+  pinMode(10, OUTPUT); //RED LED BACKWARD
+  pinMode(11, OUTPUT); //YELLOW LED IDLE
+  pinMode(12, OUTPUT); //GREEN LED FORWARD
   pinMode(5, OUTPUT); //negative motor term
   pinMode(6, OUTPUT); //positive motor term
   pinMode(9, OUTPUT); //pwm pin
@@ -25,11 +40,6 @@ void setup()
 }
 
 int STOPPED_DEADBAND = 30;
-
-void estopISR() //handler for estop interrupt
-{
-  estopPressed = true; //triggers interrupt flag
-}
 
 void loop()
 {
@@ -64,25 +74,23 @@ void loop()
   Serial.println(speed);//debug
   if (speed > 0)
   {
-    digitalWrite(4, LOW); //Idle LED deactivates
-    digitalWrite(5, LOW); //extend actuator motor forward
-    digitalWrite(2, LOW); //Backward LED deactivates
-    digitalWrite(6, HIGH);
-    digitalWrite(3, HIGH); //Forward LED activates
+    digitalWrite(10, LOW); //Idle LED deactivatesd
+    digitalWrite(11, LOW); //Backward LED deactivates
+    digitalWrite(12, HIGH); //Forward LED activates
+    motorExtend();
   }
   else if (speed < 0)
   {
-    digitalWrite(4, LOW);  //Idle LED deactivates
-    digitalWrite(5, HIGH); //retract actuator motorbackward
-    digitalWrite(3, LOW);  //Forward LED deactivates
-    digitalWrite(6, LOW);
-    digitalWrite(2, HIGH); //Backward LED activates
+    digitalWrite(12, LOW);  //Idle LED deactivates
+    digitalWrite(11, LOW);  //Forward LED deactivates
+    digitalWrite(10, HIGH); //Backward LED activates
+    motorRetract();
   }
   else if(speed == 0)
   {
-    digitalWrite(2, LOW); //Backward LED deactivates
-    digitalWrite(3, LOW); //Forward LED deactivates
-    digitalWrite(4, HIGH); //Idle LED activates
+    digitalWrite(12, LOW); //Backward LED deactivates
+    digitalWrite(10, LOW); //Forward LED deactivates
+    digitalWrite(11, HIGH); //Idle LED activates
 
   }
   analogWrite(9, abs(speed));
