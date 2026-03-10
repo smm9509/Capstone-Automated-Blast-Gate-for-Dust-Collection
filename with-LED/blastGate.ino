@@ -3,25 +3,43 @@
 //motor position enum states
 // we should be switching to state machines as we progress
 // more robust code that will prevent future spaghetti code
-enum motorPos {START, POS25, POS50, POS75, POS100} state, prevState;
+enum motorPos {IDLE, MOVING, ESTOP} state, prevState;
 volatile bool isNewState; //checks if state changes
 volatile bool estopPressed = false;  //estop state
+int targetPercent;
+int targetPos;
+int currentPos = 0;
+int currentPercent = 0;
+const int minSpeed = 80; //physical minimum is 50 but it buzzes so 80 is safer
+int error;
+int speed;
+const int deadband = 0;
+int kp = 1.5;
 
 void estopISR() //handler for estop interrupt
 {
   estopPressed = true; //triggers interrupt flag
 }
 
-void motorExtend()
+void motorExtend(int speed)
 {
   digitalWrite(5, LOW); 
   digitalWrite(6, HIGH); //extends motor forward
+  analogWrite(9, speed);
 }
-void motorRetract()
+void motorRetract(int speed)
 {
   digitalWrite(5, HIGH); //retracts motor backward
   digitalWrite(6, LOW); 
+  analogWrite(9, speed);
 }
+void motorStop()
+{
+  digitalWrite(5, LOW);
+  digitalWrite(6, LOW);
+  analogWrite(9, 0);
+}
+
 void setup()
 {
   Serial.begin(115200); //baud rate of ESP32
@@ -35,65 +53,66 @@ void setup()
   pinMode(9, OUTPUT); //pwm pin
   pinMode(A0, INPUT); //potentiometer reading pin
 
-  state = START; //sets initial state at origin
-  prevState = POS100; //arbitrary prevState
+  state = IDLE; //sets initial state at origin
+  prevState = ESTOP; //arbitrary prevState
 }
-
-int STOPPED_DEADBAND = 30;
 
 void loop()
 {
-  int potValue = analogRead(A0); //potentiometer reading
-  int speed = map(potValue, 0, 1023, -255, 255); 
-  //maps analog to digital range 0-1023 to -255 to 255
-  //speed deadband
-  if (speed > -STOPPED_DEADBAND && speed < STOPPED_DEADBAND) {
-    speed = 0;
-  } 
   if (estopPressed)
   {
-    state = START; //retracts actuator back to start position
+    state = ESTOP; //retracts actuator back to start position
     estopPressed = false; //release estop
   }
+  isNewState = (state != prevState);
   switch (state)
   {
-    case START:
+    case IDLE:
+      if (isNewState) Serial.println("Enter positon from 0-100%");
+      if (Serial.available())
+      {
+        targetPercent = Serial.parseInt(); //reads integers only, but the /n remains
+        while (Serial.available()) //clears /n by reading the serial again
+        {
+          Serial.read(); //reads the serial which is usually /n and clears it
+          //** somethign to note: if user puts a float, it will run the integer half and the decimal half
+        }
+        targetPercent = constrain(targetPercent, 0, 100); //clamps targetPercent to a range
+        targetPos = map(targetPercent, 0, 100,  0, 1023); //maps the percent given to an analog reading 0-1023
+        Serial.print("Percent set:");
+        Serial.println(targetPercent); //print target percent
+        Serial.print("Position set:");
+        Serial.println(targetPos); //print target pos
+        state = MOVING; //goes to moving section
+      }
       break;
-    case POS25: 
-  		break;
-  	case POS50:
-  		break;
-  	case POS75:
-  		break;
-  	case POS100:
-  		break;
-    default: state = START;
+    case MOVING:
+      error = targetPos - currentPos; //error is difference between target and current for controls, doubles as a comparison, + = extend, - = retract
+      speed = map(abs(error), 0, 100, minSpeed, 255); //proportional speed to error distance, P
+      //usually 1023 but i put 100 so that it goes max speed thne slows down when it gets closer instead of gradual
+      speed = constrain(speed, minSpeed, 255); //safety constraint
+      if (error > deadband) //targetpos is greater than currentpos, extend, deadband for small errors
+      {
+        motorExtend(speed); //keeps extending until current reaches target
+      }
+      else if (error < -deadband) //targetpos is less than currentpos, retract
+      {
+        motorRetract(speed); //keeps retracting until current reaches target  
+      }
+      else
+      {
+        motorStop(); //stop motor
+        state = IDLE; //wait for next command
+      }
+      break;
+    case ESTOP:
+      motorStop(); //stops motor
+      break;
+    default: state = IDLE;
   }
   prevState = state; //changes state to previous
 
-  Serial.println(speed);//debug
-  if (speed > 0)
-  {
-    digitalWrite(10, LOW); //Idle LED deactivatesd
-    digitalWrite(11, LOW); //Backward LED deactivates
-    digitalWrite(12, HIGH); //Forward LED activates
-    motorExtend();
-  }
-  else if (speed < 0)
-  {
-    digitalWrite(12, LOW);  //Idle LED deactivates
-    digitalWrite(11, LOW);  //Forward LED deactivates
-    digitalWrite(10, HIGH); //Backward LED activates
-    motorRetract();
-  }
-  else if(speed == 0)
-  {
-    digitalWrite(12, LOW); //Backward LED deactivates
-    digitalWrite(10, LOW); //Forward LED deactivates
-    digitalWrite(11, HIGH); //Idle LED activates
-
-  }
-  analogWrite(9, abs(speed));
-  //absolute so that analog always writes positive
+  currentPos = analogRead(A0); //position reading, analog 0 - 1023
+  currentPercent = map(currentPos, 0, 1023, 0, 100); //percent reading, changes current to percent reading (debug for now)
   
 }
