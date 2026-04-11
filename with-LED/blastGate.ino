@@ -1,5 +1,27 @@
 // C++ code
 
+// pin definitions for soldered hardware (rev 2026-04-08)
+// pin definitions - a representation of the hardware as it is wired today.
+// 15-pin connector
+    static const uint8_t RX = 0; // pin RX0
+    static const uint8_t TX = 1; // pin TX1
+    static const uint8_t ACS_ACCESS = 2; //pin D2
+    //static const uint8_t BUSIO1 = ; //Tom asked to express the gate status on a binary signal, but we haven't sorted that out yet.
+// devices on board - HARDWARE NOT INSTALLED AS OF 2026-04-08
+    static const uint8_t E_STOP = 3;
+    static const uint8_t LED_RED = 10;
+    static const uint8_t LED_YLW = 11;
+    static const uint8_t LED_GRN = 12;
+    // TODO: add hardware for powered-on manual override with 3-position ON-OFF-ON switch
+    static const uint8_t OVERRIDE_OPEN = 4;
+    static const uint8_t OVERRIDE_CLOSE = 7;
+// connections to L298N subassembly
+    static const uint8_t ENA = 5; //warning: older code assumes ENA was wired to pin 9 instead of 5
+    static const uint8_t IN1 = 6;
+    static const uint8_t IN2 = 9; //warning: older code assumes IN2 was wired to pin 5 instead of 9
+// connections to Linear Actuator Servo
+    static const uint8_t WIPER = A0;
+
 //motor position enum states
 // we should be switching to state machines as we progress
 // more robust code that will prevent future spaghetti code
@@ -23,21 +45,21 @@ void estopISR() //handler for estop interrupt
 
 void motorExtend(int speed)
 {
-  digitalWrite(5, LOW); 
-  digitalWrite(6, HIGH); //extends motor forward
-  analogWrite(9, speed);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN1, HIGH); //extends motor forward
+  analogWrite(ENA, speed);
 }
 void motorRetract(int speed)
 {
-  digitalWrite(5, HIGH); //retracts motor backward
-  digitalWrite(6, LOW); 
-  analogWrite(9, speed);
+  digitalWrite(IN2, HIGH); //retracts motor backward
+  digitalWrite(IN1, LOW);
+  analogWrite(ENA, speed);
 }
 void motorStop()
 {
-  digitalWrite(5, LOW);
-  digitalWrite(6, LOW);
-  analogWrite(9, 0);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN1, LOW);
+  analogWrite(ENA, 0);
 }
 
 void setup()
@@ -97,7 +119,7 @@ void loop()
       }
       else if (error < -deadband) //targetpos is less than currentpos, retract
       {
-        motorRetract(speed); //keeps retracting until current reaches target  
+        motorRetract(speed); //keeps retracting until current reaches target
       }
       else
       {
@@ -114,5 +136,5 @@ void loop()
 
   currentPos = analogRead(A0); //position reading, analog 0 - 1023
   currentPercent = map(currentPos, 0, 1023, 0, 100); //percent reading, changes current to percent reading (debug for now)
-  
+
 }
