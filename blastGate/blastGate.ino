@@ -8,7 +8,7 @@
     static const uint8_t ACS_ACCESS = 2; //pin D2
     //static const uint8_t BUSIO1 = ; //Tom asked to express the gate status on a binary signal, but we haven't sorted that out yet.
 // devices on board - HARDWARE NOT INSTALLED AS OF 2026-04-08
-    static const uint8_t E_STOP = 3;
+    static const uint8_t E_STOP_PIN = 3;
     static const uint8_t LED_RED = 10;
     static const uint8_t LED_YLW = 11;
     static const uint8_t LED_GRN = 12;
@@ -65,15 +65,15 @@ void motorStop()
 void setup()
 {
   Serial.begin(115200); //baud rate of ESP32
-  pinMode(2, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
-  attachInterrupt(digitalPinToInterrupt(2), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
-  pinMode(10, OUTPUT); //RED LED BACKWARD
-  pinMode(11, OUTPUT); //YELLOW LED IDLE
-  pinMode(12, OUTPUT); //GREEN LED FORWARD
-  pinMode(5, OUTPUT); //negative motor term
-  pinMode(6, OUTPUT); //positive motor term
-  pinMode(9, OUTPUT); //pwm pin
-  pinMode(A0, INPUT); //potentiometer reading pin
+  pinMode(E_STOP_PIN, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
+  attachInterrupt(digitalPinToInterrupt(E_STOP_PIN), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
+  pinMode(LED_RED, OUTPUT); //RED LED BACKWARD
+  pinMode(LED_YLW, OUTPUT); //YELLOW LED IDLE
+  pinMode(LED_GRN, OUTPUT); //GREEN LED FORWARD
+  pinMode(IN1, OUTPUT); //negative motor term
+  pinMode(IN2, OUTPUT); //positive motor term
+  pinMode(ENA, OUTPUT); //pwm pin
+  pinMode(WIPER, INPUT); //potentiometer reading pin
 
   state = IDLE; //sets initial state at origin
   prevState = ESTOP; //arbitrary prevState
@@ -134,7 +134,7 @@ void loop()
   }
   prevState = state; //changes state to previous
 
-  currentPos = analogRead(A0); //position reading, analog 0 - 1023
+  currentPos = analogRead(WIPER); //position reading, analog 0 - 1023
   currentPercent = map(currentPos, 0, 1023, 0, 100); //percent reading, changes current to percent reading (debug for now)
 
 }
