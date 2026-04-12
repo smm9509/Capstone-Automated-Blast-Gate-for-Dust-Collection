@@ -1,7 +1,7 @@
 #define BAUD_BENCH  115200
-#define PIN_ACCESS  5
-#define PIN_RX 16
-#define PIN_TX 17
+#define PIN_ACCESS  5 // red wire to pin 1
+#define PIN_RX 16 // red or orange wire to pin 15, with an LED and a resistor connected to step down the voltage.
+#define PIN_TX 17 // green wire to pin 12
 
 const char* help =
   "Mock ACS ESP32 v6 -- bench: 115200, nano: 4800\r\n"

@@ -1,6 +1,8 @@
 // C++ code
 #include <EEPROM.h>
 
+#define SKIP_CALIBRATION 'yesplz'
+
 // pin definitions for soldered hardware (rev 2026-04-08)
 // pin definitions - a representation of the hardware as it is wired today.
 // 15-pin connector
@@ -64,20 +66,20 @@ void acsAccessISR()
 
 void motorExtend(int speed)
 {
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN1, HIGH); //extends motor forward
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH); //extends motor forward
   analogWrite(ENA, speed);
 }
 void motorRetract(int speed)
 {
-  digitalWrite(IN2, HIGH); //retracts motor backward
-  digitalWrite(IN1, LOW);
+  digitalWrite(IN1, HIGH); //retracts motor backward
+  digitalWrite(IN2, LOW);
   analogWrite(ENA, speed);
 }
 void motorStop()
 {
-  digitalWrite(IN2, LOW);
   digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
   analogWrite(ENA, 0);
 }
 
@@ -93,11 +95,18 @@ void setup()
   pinMode(LED_RED, OUTPUT); //RED LED BACKWARD
   pinMode(LED_YLW, OUTPUT); //YELLOW LED IDLE
   pinMode(LED_GRN, OUTPUT); //GREEN LED FORWARD
-  pinMode(IN1, OUTPUT); //negative motor term
-  pinMode(IN2, OUTPUT); //positive motor term
+  pinMode(IN2, OUTPUT); //negative motor term
+  pinMode(IN1, OUTPUT); //positive motor term
   pinMode(ENA, OUTPUT); //pwm pin
   pinMode(WIPER, INPUT); //potentiometer reading pin
 
+#ifdef SKIP_CALIBRATION
+  // Skip calibration; use conservative near-center values for bench testing.
+  // Actual travel limits are unknown, so movement is constrained to a narrow
+  // band around midscale to avoid hard-stopping the actuator.
+  wiperMin = 412;
+  wiperMax = 612;
+#else
   {  //wiper calibration block
     WiperCalibration cal;
     EEPROM.get(wiper_calibration_addr, cal);
@@ -147,6 +156,7 @@ void setup()
       EEPROM.put(wiper_calibration_addr, cal);
     }
   }
+#endif // SKIP_CALIBRATION
 
   state = IDLE;       //sets initial state at origin
   prevState = ESTOP;  //arbitrary prevState
