@@ -1,11 +1,12 @@
 
+// pin definitions for soldered hardware (rev 2026-04-08)
 // pin definitions - a representation of the hardware as it is wired today.
 // 15-pin connector
     static const uint8_t RX = 0; // pin RX0
     static const uint8_t TX = 1; // pin TX1
     static const uint8_t ACS_ACCESS = 2; //pin D2
     //static const uint8_t BUSIO1 = ; //Tom asked to express the gate status on a binary signal, but we haven't sorted that out yet.
-// devices on board - HARDWARE NOT INSTALLED AS OF 2026-04-11
+// devices on board - HARDWARE NOT INSTALLED AS OF 2026-04-08
     static const uint8_t E_STOP = 3;
     static const uint8_t LED_RED = 10;
     static const uint8_t LED_YLW = 11;

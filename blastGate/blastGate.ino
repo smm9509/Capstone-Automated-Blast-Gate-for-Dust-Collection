@@ -1,4 +1,5 @@
 // C++ code
+#include <EEPROM.h>
 
 // pin definitions for soldered hardware (rev 2026-04-08)
 // pin definitions - a representation of the hardware as it is wired today.
@@ -13,8 +14,8 @@
     static const uint8_t LED_YLW = 11;
     static const uint8_t LED_GRN = 12;
     // TODO: add hardware for powered-on manual override with 3-position ON-OFF-ON switch
-    static const uint8_t OVERRIDE_OPEN = 4;
-    static const uint8_t OVERRIDE_CLOSE = 7;
+    static const uint8_t JOG_OPEN = 4;
+    static const uint8_t JOG_CLOSE = 7;
 // connections to L298N subassembly
     static const uint8_t ENA = 5; //warning: older code assumes ENA was wired to pin 9 instead of 5
     static const uint8_t IN1 = 6;
@@ -22,14 +23,26 @@
 // connections to Linear Actuator Servo
     static const uint8_t WIPER = A0;
 
-//motor position enum states
+// state machine variables
 // we should be switching to state machines as we progress
 // more robust code that will prevent future spaghetti code
-enum motorPos {IDLE, MOVING, ESTOP} state, prevState;
+enum motorStateEnum {IDLE, MOVING, ESTOP} state, prevState;
 volatile bool isNewState; //checks if state changes
 volatile bool estopPressed = false;  //estop state
 int targetPercent;
 int targetPos;
+
+//wiper calibration
+uint16_t wiperMin;
+uint16_t wiperMax;
+const uint32_t wiper_calibration_magic = 0xBE291A1; //change this value to force recalibration after flashing new firmware
+const uint16_t wiper_calibration_addr = 0x318; //between 0x200 and 0x400 to fit in unused area of Arduino Nano EEPROM
+struct WiperCalibration {
+    uint32_t magic;
+    uint16_t minVal;
+    uint16_t maxVal;
+};
+
 int currentPos = 0;
 int currentPercent = 0;
 const int minSpeed = 80; //physical minimum is 50 but it buzzes so 80 is safer
@@ -67,6 +80,8 @@ void setup()
   Serial.begin(115200); //baud rate of ESP32
   pinMode(E_STOP_PIN, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
   attachInterrupt(digitalPinToInterrupt(E_STOP_PIN), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
+  pinMode(JOG_OPEN, INPUT_PULLUP);
+  pinMode(JOG_CLOSE, INPUT_PULLUP);
   pinMode(LED_RED, OUTPUT); //RED LED BACKWARD
   pinMode(LED_YLW, OUTPUT); //YELLOW LED IDLE
   pinMode(LED_GRN, OUTPUT); //GREEN LED FORWARD
@@ -74,6 +89,62 @@ void setup()
   pinMode(IN2, OUTPUT); //positive motor term
   pinMode(ENA, OUTPUT); //pwm pin
   pinMode(WIPER, INPUT); //potentiometer reading pin
+
+  { //wiper calibration block
+      WiperCalibration cal;
+      EEPROM.get(wiper_calibration_addr, cal);
+      if(cal.magic == wiper_calibration_magic) {
+          wiperMin = cal.minVal;
+          wiperMax = cal.maxVal;
+      } else {
+          //TODO: get the user's attention that calibration is needed. Even if serial is not connected.
+          // LEDs? Morse code C on the builtin LED?
+          Serial.println("Please jog the gate to closed position");
+          //wait/poll for closing to finish
+          {
+              bool jog_close_was_pressed = false;
+              while (!jog_close_was_pressed || !digitalRead(JOG_CLOSE))
+              {
+                  if (!digitalRead(JOG_CLOSE))
+                  {
+                      motorRetract(minSpeed);
+                      jog_close_was_pressed = true;
+                  } else if (!digitalRead(JOG_OPEN))
+                  {
+                      motorExtend(minSpeed);
+                  } else {
+                      motorStop();
+                  }
+              }
+          }
+          wiperMin = analogRead(WIPER);
+          Serial.println("Please jog the gate to open position");
+          //wait/poll for opening to finish
+            {
+                bool jog_open_was_pressed = false;
+                while (!jog_open_was_pressed || !digitalRead(JOG_OPEN))
+                {
+                    if (!digitalRead(JOG_OPEN))
+                    {
+                        motorExtend(minSpeed);
+                        jog_open_was_pressed = true;
+                    } else if (!digitalRead(JOG_CLOSE))
+                    {
+                        motorRetract(minSpeed);
+                    } else {
+                        motorStop();
+                    }
+                }
+            }
+          wiperMax = analogRead(WIPER);
+
+          //save calibration
+          cal.magic = wiper_calibration_magic;
+          cal.minVal = wiperMin;
+          cal.maxVal = wiperMax;
+          EEPROM.put(wiper_calibration_addr, cal);
+      }
+  }
 
   state = IDLE; //sets initial state at origin
   prevState = ESTOP; //arbitrary prevState
@@ -100,7 +171,7 @@ void loop()
           //** somethign to note: if user puts a float, it will run the integer half and the decimal half
         }
         targetPercent = constrain(targetPercent, 0, 100); //clamps targetPercent to a range
-        targetPos = map(targetPercent, 0, 100,  0, 1023); //maps the percent given to an analog reading 0-1023
+        targetPos = map(targetPercent, 0, 100,  wiperMin, wiperMax); //maps the percent given to an analog reading 0-1023
         Serial.print("Percent set:");
         Serial.println(targetPercent); //print target percent
         Serial.print("Position set:");
@@ -135,6 +206,6 @@ void loop()
   prevState = state; //changes state to previous
 
   currentPos = analogRead(WIPER); //position reading, analog 0 - 1023
-  currentPercent = map(currentPos, 0, 1023, 0, 100); //percent reading, changes current to percent reading (debug for now)
+  currentPercent = map(currentPos, wiperMin, wiperMax, 0, 100); //percent reading, changes current to percent reading (debug for now)
 
 }
