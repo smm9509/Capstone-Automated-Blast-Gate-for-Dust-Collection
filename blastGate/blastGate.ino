@@ -83,7 +83,7 @@ void motorStop()
 
 void setup()
 {
-  Serial.begin(115200); //baud rate of ESP32
+  Serial.begin(4800); //baud rate of ESP32
   pinMode(ACS_ACCESS, INPUT);
   attachInterrupt(digitalPinToInterrupt(ACS_ACCESS), acsAccessISR, CHANGE);
   pinMode(E_STOP_PIN, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
