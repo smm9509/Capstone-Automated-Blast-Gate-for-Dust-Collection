@@ -179,10 +179,15 @@ void loop()
   isNewState = (state != prevState);
   switch (state)
   {
-    case IDLE:
+    case IDLE: //TODO: blast gate should respond to query while moving as well as idle.
       if (isNewState) Serial.println("Enter positon from 0-100%");
       if (Serial.available())
       {
+        if(Serial.peek() == int('?')) { //READ case
+            while (Serial.available()) { Serial.read(); }
+            Serial.println(analogRead(WIPER));
+            break;
+        } // else: WRITE setpoint case
         targetPercent = Serial.parseInt(); //reads integers only, but the /n remains
         //TODO: Vincent — replace this with ACS communication protocol
         while (Serial.available()) //clears /n by reading the serial again
