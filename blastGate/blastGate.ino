@@ -31,6 +31,8 @@ volatile bool isNewState; //checks if state changes
 volatile bool estopPressed = false;  //estop state
 int targetPercent;
 int targetPos;
+volatile bool acsAccessChanged = false; //set by ISR on any edge
+int openSetpoint = 50; //TODO: updated from serial by Vincen's branch
 
 //wiper calibration
 uint16_t wiperMin;
@@ -55,6 +57,10 @@ void estopISR() //handler for estop interrupt
 {
   estopPressed = true; //triggers interrupt flag
 }
+void acsAccessISR()
+{
+  acsAccessChanged = true;
+}
 
 void motorExtend(int speed)
 {
@@ -78,6 +84,8 @@ void motorStop()
 void setup()
 {
   Serial.begin(115200); //baud rate of ESP32
+  pinMode(ACS_ACCESS, INPUT);
+  attachInterrupt(digitalPinToInterrupt(ACS_ACCESS), acsAccessISR, CHANGE);
   pinMode(E_STOP_PIN, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
   attachInterrupt(digitalPinToInterrupt(E_STOP_PIN), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
   pinMode(JOG_OPEN, INPUT_PULLUP);
@@ -157,6 +165,17 @@ void loop()
     state = ESTOP; //retracts actuator back to start position
     estopPressed = false; //release estop
   }
+  if (acsAccessChanged)
+  {
+      acsAccessChanged = false;
+      if(digitalRead(ACS_ACCESS))
+      {
+          targetPercent = openSetpoint;
+      } else {
+          targetPercent = 0;
+      }
+      state = MOVING;
+  }
   isNewState = (state != prevState);
   switch (state)
   {
@@ -165,6 +184,7 @@ void loop()
       if (Serial.available())
       {
         targetPercent = Serial.parseInt(); //reads integers only, but the /n remains
+        //TODO: Vincent — replace this with ACS communication protocol
         while (Serial.available()) //clears /n by reading the serial again
         {
           Serial.read(); //reads the serial which is usually /n and clears it
@@ -174,12 +194,14 @@ void loop()
         targetPos = map(targetPercent, 0, 100,  wiperMin, wiperMax); //maps the percent given to an analog reading 0-1023
         Serial.print("Percent set:");
         Serial.println(targetPercent); //print target percent
+        openSetpoint = targetPercent; //use serial to set the opening amount
         Serial.print("Position set:");
         Serial.println(targetPos); //print target pos
         state = MOVING; //goes to moving section
       }
       break;
     case MOVING:
+      targetPos = map(targetPercent, 0, 100, wiperMin, wiperMax);
       error = targetPos - currentPos; //error is difference between target and current for controls, doubles as a comparison, + = extend, - = retract
       speed = map(abs(error), 0, 100, minSpeed, 255); //proportional speed to error distance, P
       //usually 1023 but i put 100 so that it goes max speed thne slows down when it gets closer instead of gradual
