@@ -13,43 +13,46 @@ const char* help =
   "  ?   -- query Nano wiper ADC position (forwarded)\r\n"
   "  0-100 -- set Nano open setpoint percent (forwarded)\r\n";
 
+#define SerialGate Serial1
+#define SerialPi Serial
+
 void setup()
 {
   pinMode(PIN_ACCESS, OUTPUT);
   digitalWrite(PIN_ACCESS, LOW);
-  Serial.begin(BAUD_BENCH);
-  Serial1.begin(4800, SERIAL_8N1, PIN_RX, PIN_TX);
-  Serial.write(help);
+  SerialPi.begin(BAUD_BENCH);
+  SerialGate.begin(4800, SERIAL_8N1, PIN_RX, PIN_TX);
+  SerialPi.write(help);
 }
 
 void loop()
 {
-  if (Serial.available()) {
-    char c = Serial.read();
+  if (SerialPi.available()) {
+    char c = SerialPi.read();
     switch (c) {
       case 'O':
         digitalWrite(PIN_ACCESS, HIGH);
-        Serial.write("ACCESS is now HIGH.\r\n");
+        SerialPi.write("ACCESS is now HIGH.\r\n");
         break;
       case 'C':
         digitalWrite(PIN_ACCESS, LOW);
-        Serial.write("ACCESS is now LOW.\r\n");
+        SerialPi.write("ACCESS is now LOW.\r\n");
         break;
       case 'P': {
         bool orig = digitalRead(PIN_ACCESS);
         digitalWrite(PIN_ACCESS, !orig);
-        Serial.write("ACCESS pulsed. Restoring in 5s...\r\n");
+        SerialPi.write("ACCESS pulsed. Restoring in 5s...\r\n");
         delay(5000);
         digitalWrite(PIN_ACCESS, orig);
-        Serial.write("ACCESS restored.\r\n");
+        SerialPi.write("ACCESS restored.\r\n");
         break;
       }
       case 'H':
-        Serial.write(help);
+        SerialPi.write(help);
         break;
       default:
-        Serial1.write(c);
+        SerialGate.write(c);
     }
   }
-  if (Serial1.available()) Serial.write(Serial1.read());
+  if (SerialGate.available()) SerialPi.write(SerialGate.read());
 }

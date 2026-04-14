@@ -104,8 +104,8 @@ void setup()
   // Skip calibration; use conservative near-center values for bench testing.
   // Actual travel limits are unknown, so movement is constrained to a narrow
   // band around midscale to avoid hard-stopping the actuator.
-  wiperMin = 412;
-  wiperMax = 612;
+  wiperMin = 0;  
+  wiperMax = 1023;
 #else
   {  //wiper calibration block
     WiperCalibration cal;
