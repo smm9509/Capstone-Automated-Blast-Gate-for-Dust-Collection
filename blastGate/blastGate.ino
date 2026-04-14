@@ -1,7 +1,8 @@
 // C++ code
 #include <EEPROM.h>
 
-#define SKIP_CALIBRATION 'yesplz'
+//#define SKIP_CALIBRATION 'yesplz'
+static const bool COMPILETIME_CALIBRATION = false;
 
 // pin definitions for soldered hardware (rev 2026-04-08)
 // pin definitions - a representation of the hardware as it is wired today.
@@ -104,8 +105,8 @@ void setup()
   // Skip calibration; use conservative near-center values for bench testing.
   // Actual travel limits are unknown, so movement is constrained to a narrow
   // band around midscale to avoid hard-stopping the actuator.
-  wiperMin = 0;  
-  wiperMax = 1023;
+  wiperMin = 412;  
+  wiperMax = 612;
 #else
   {  //wiper calibration block
     WiperCalibration cal;
@@ -114,40 +115,45 @@ void setup()
       wiperMin = cal.minVal;
       wiperMax = cal.maxVal;
     } else {
-      //TODO: get the user's attention that calibration is needed. Even if serial is not connected.
-      // LEDs? Morse code C on the builtin LED?
-      Serial.println("Please jog the gate to closed position");
-      //wait/poll for closing to finish
-      {
-        bool jog_close_was_pressed = false;
-        while (!jog_close_was_pressed || !digitalRead(JOG_CLOSE)) {
-          if (!digitalRead(JOG_CLOSE)) {
-            motorRetract(minSpeed);
-            jog_close_was_pressed = true;
-          } else if (!digitalRead(JOG_OPEN)) {
-            motorExtend(minSpeed);
-          } else {
-            motorStop();
+      if(COMPILETIME_CALIBRATION) {
+        wiperMin = 110;
+        wiperMax = 917;
+      } else {
+        //TODO: get the user's attention that calibration is needed. Even if serial is not connected.
+        // LEDs? Morse code C on the builtin LED?
+        Serial.println("Please jog the gate to closed position");
+        //wait/poll for closing to finish
+        {
+          bool jog_close_was_pressed = false;
+          while (!jog_close_was_pressed || !digitalRead(JOG_CLOSE)) {
+            if (!digitalRead(JOG_CLOSE)) {
+              motorRetract(minSpeed);
+              jog_close_was_pressed = true;
+            } else if (!digitalRead(JOG_OPEN)) {
+              motorExtend(minSpeed);
+            } else {
+              motorStop();
+            }
           }
         }
-      }
-      wiperMin = analogRead(WIPER);
-      Serial.println("Please jog the gate to open position");
-      //wait/poll for opening to finish
-      {
-        bool jog_open_was_pressed = false;
-        while (!jog_open_was_pressed || !digitalRead(JOG_OPEN)) {
-          if (!digitalRead(JOG_OPEN)) {
-            motorExtend(minSpeed);
-            jog_open_was_pressed = true;
-          } else if (!digitalRead(JOG_CLOSE)) {
-            motorRetract(minSpeed);
-          } else {
-            motorStop();
+        wiperMin = analogRead(WIPER);
+        Serial.println("Please jog the gate to open position");
+        //wait/poll for opening to finish
+        {
+          bool jog_open_was_pressed = false;
+          while (!jog_open_was_pressed || !digitalRead(JOG_OPEN)) {
+            if (!digitalRead(JOG_OPEN)) {
+              motorExtend(minSpeed);
+              jog_open_was_pressed = true;
+            } else if (!digitalRead(JOG_CLOSE)) {
+              motorRetract(minSpeed);
+            } else {
+              motorStop();
+            }
           }
         }
+        wiperMax = analogRead(WIPER);
       }
-      wiperMax = analogRead(WIPER);
 
       //save calibration
       cal.magic = wiper_calibration_magic;
@@ -180,6 +186,8 @@ void loop() {
     if (Serial.peek() == int('?')) {  //READ case
       while (Serial.available()) { Serial.read(); }
       Serial.println(analogRead(WIPER));
+    } else if (!isDigit(Serial.peek())) { // discard non-digit, non-'?' (e.g. stray \r\n)
+      Serial.read();
     } else { //WRITE setpoint case
       targetPercent = Serial.parseInt();  //reads integers only, but the /n remains
       //TODO: Vincent — replace this with ACS communication protocol
