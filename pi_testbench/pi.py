@@ -1,5 +1,6 @@
 # Python script for the test plan of the automated blast gate
 import json
+import math
 import os
 import time
 
@@ -46,7 +47,16 @@ def main():
 
         # loop
         while True:
-            raise NotImplementedError
+            now = time.monotonic_ns()
+            PERIOD = 10e9  # 10 seconds
+            angle_turns = now % PERIOD * 360 / PERIOD
+            value = (math.sin(angle_turns * 2 * math.pi) + 1) / 2 * 100
+            # send value to gate
+            nanoACS.write(f"{int(value)}\n".encode())
+            # read value from gate
+            pos = nanoACS.wiper
+            print(f"pos: {pos}")
+            # expecting chaos because that write causes a different response and the response is delayed like 1600ms or so
 
     finally:
         nanoACS.close()
