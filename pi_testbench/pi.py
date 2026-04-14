@@ -13,10 +13,12 @@ class NanoACS(serial.Serial):
         self.write(b"?")
         while True:
             line = self.readline().decode().strip()
+            if not line:
+                raise TimeoutError("wiper: no response from gate Nano")
             try:
                 return int(line)
             except ValueError:
-                pass
+                print(f"wiper skip: {line!r}")
 
 
 nanoACS = NanoACS("/dev/ttyUSB0", 115200, timeout=1)
