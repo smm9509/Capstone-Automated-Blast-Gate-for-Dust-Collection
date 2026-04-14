@@ -11,7 +11,12 @@ class NanoACS(serial.Serial):
     @property
     def wiper(self) -> int:
         self.write(b"?")
-        return int(self.readline())
+        while True:
+            line = self.readline().decode().strip()
+            try:
+                return int(line)
+            except ValueError:
+                pass
 
 
 nanoACS = NanoACS("/dev/ttyUSB0", 115200, timeout=1)
