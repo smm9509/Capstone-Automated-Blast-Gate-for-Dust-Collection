@@ -13,6 +13,7 @@ class NanoACS(serial.Serial):
 
 
 nanoACS = NanoACS("/dev/ttyUSB0", 115200, timeout=1)
+nanoACS.reset_input_buffer()  # discard MOTD buffered before script started
 
 
 def main():
