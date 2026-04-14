@@ -6,17 +6,21 @@ from tkinter.constants import N
 import serial
 
 nanoACS = serial.Serial("/dev/ttyUSB0", 115200, timeout=1)
-state: dict = {}
 
 
 def main():
+    state: dict = {}
     try:
         # setup
-        with open("state.json", "r") as f:
-            state = json.load(f)
-            nanoACS.open()
-            nanoACS.write(b"H")
-            assert nanoACS.read(4) == "Mock", "Help MOTD response not received"
+        try:
+            with open("state.json", "r") as f:
+                state = json.load(f)
+        except FileNotFoundError:
+            with open("state.json", "w") as f:
+                json.dump(state, f)
+        nanoACS.open()
+        nanoACS.write(b"H")
+        assert nanoACS.read(4) == "Mock", "Help MOTD response not received"
 
         # loop
         while True:
