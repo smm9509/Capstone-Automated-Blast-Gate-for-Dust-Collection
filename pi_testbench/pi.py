@@ -1,7 +1,6 @@
 # Python script for the test plan of the automated blast gate
 import json
 import os
-from tkinter.constants import N
 
 import serial
 
@@ -18,9 +17,8 @@ def main():
         except FileNotFoundError:
             with open("state.json", "w") as f:
                 json.dump(state, f)
-        nanoACS.open()
         nanoACS.write(b"H")
-        assert nanoACS.read(4) == "Mock", "Help MOTD response not received"
+        assert nanoACS.read(4) == b"Mock", "Help MOTD response not received"
 
         # loop
         while True:
