@@ -3,13 +3,14 @@
 #include <SoftwareSerial.h>
 
 #define BAUD_BENCH  115200
+#define VERSION "nanoACS v9 2026-04-14T6:43\r\n"
 #define PIN_ACCESS  4 // red wire to pin 1 of vga adapter
 #define PIN_RX      5 // "orange" (red) wire from gate Nano TX, pin 15 of VGA adapter
 #define PIN_TX      6 // green wire to gate Nano RX, pin 12 of VGA adapter
 
 const char* help =
-  "Mock ACS Nano v8 -- bench: 115200, nano: 4800\r\n"
   "Commands:\r\n"
+  "  V   -- print version string\r\n"
   "  O   -- assert ACCESS HIGH (card present)\r\n"
   "  C   -- deassert ACCESS LOW (card removed)\r\n"
   "  P   -- pulse ACCESS for 5s to the opposite state\r\n"
@@ -51,6 +52,9 @@ void loop()
         SerialPi.write("ACCESS restored.\r\n");
         break;
       }
+      case 'V':
+        SerialPi.write(VERSION);
+        break;
       case 'H':
         SerialPi.write(help);
         break;
