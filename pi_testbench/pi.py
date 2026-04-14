@@ -34,9 +34,10 @@ def main():
             os.path.dirname(__file__), "../test-nanoACS/test-nanoACS.ino"
         )
         with open(ino) as f:
-            version = next(
+            version_full = next(
                 l.split('"')[1] for l in f if l.startswith("#define VERSION")
             )
+            version = version_full.split("\\")[0]
         nanoACS.write(b"V")
         response = nanoACS.readline().decode().strip()
         assert response == version.strip(), (
