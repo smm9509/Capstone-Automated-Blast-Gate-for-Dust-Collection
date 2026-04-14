@@ -1,6 +1,7 @@
 # Python script for the test plan of the automated blast gate
 import json
 import os
+import time
 
 import serial
 
@@ -13,7 +14,10 @@ class NanoACS(serial.Serial):
 
 
 nanoACS = NanoACS("/dev/ttyUSB0", 115200, timeout=1)
-nanoACS.reset_input_buffer()  # discard MOTD buffered before script started
+# Opening the port triggers a DTR reset; wait for the Nano to boot and send its
+# MOTD, then flush so the version query gets a clean response.
+time.sleep(2)
+nanoACS.reset_input_buffer()
 
 
 def main():
