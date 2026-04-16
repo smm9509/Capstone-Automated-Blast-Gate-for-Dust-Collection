@@ -1,10 +1,12 @@
 # Python script for the test plan of the automated blast gate
-import json
+import datetime
 import math
 import os
 import time
 
 import serial
+
+test_version = "0.0.3"
 
 
 class NanoACS(serial.Serial):
@@ -33,15 +35,20 @@ def main():
     state: dict = {}
     try:
         # setup
+        """
         try:
             with open("state.json", "r") as f:
                 state = json.load(f)
         except FileNotFoundError:
             with open("state.json", "w") as f:
                 json.dump(state, f)
+        """
         ino = os.path.join(
             os.path.dirname(__file__), "../test-nanoACS/test-nanoACS.ino"
         )
+        # monolog, append lines to csv file
+        csv_monolog = open(f"monolog_{test_version}.csv", "a")
+
         with open(ino) as f:
             version_full = next(
                 l.split('"')[1] for l in f if l.startswith("#define VERSION")
@@ -54,7 +61,9 @@ def main():
         )
 
         nanoACS.write(b"O")  # set ACCESS to open signal
-        nanoACS.readline()
+        assert (
+            "ACCESS is now HIGH." == nanoACS.readline().strip().decode()
+        )  # ACS response which confirms the ACCESS signal was set HIGH
 
         # loop
         while True:
@@ -74,13 +83,20 @@ def main():
             assert response == f";S{int(value)}", (
                 f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
             )
+            response_digits = response[2:]
 
             # read value from gate
             pos = nanoACS.wiper
-            print(
-                f"pos: {pos}\t set: {response} \t time: {now} \t phase: {angle_turns:.2f}"
-            )  # evenly spaced columns
-            # expecting chaos because that write causes a different response and the response is delayed like 1600ms or so
+            print(  # debug info should probably also be saved to csv log
+                f"pos: {pos}\t set: {response} \t time: {now} \t phase: {
+                    angle_turns:.2f}"
+            )
+            csv_monolog.write(
+                f"{pos},{response_digits},{now},{angle_turns:.2f},{
+                    datetime.datetime.now().isoformat()
+                }\n"
+            )
+            csv_monolog.flush()
 
     finally:
         nanoACS.close()
