@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 #define BAUD_BENCH  115200
-#define VERSION "nanoACS v11 2026-04-15\r\n"
+#define VERSION "nanoACS v12 2026-04-15 end of day\r\n"
 #define PIN_ACCESS  4 // red wire to pin 1 of vga adapter
 #define PIN_RX      5 // "orange" (red) wire from gate Nano TX, pin 15 of VGA adapter
 #define PIN_TX      6 // green wire to gate Nano RX, pin 12 of VGA adapter
@@ -66,10 +66,12 @@ void loop()
         SerialPi.write(echo_hex ? "Hex echo ON\r\n" : "Hex echo OFF\r\n");
         break;
       default:
-        if (echo_hex) {
           char tmp[6];
           sprintf(tmp, "[%02X]", (uint8_t)c);
+        if (echo_hex) {
           SerialPi.write(tmp);
+        } else {
+            delayMicroseconds(sizeof(tmp)*10*1e6/BAUD_BENCH);
         }
         SerialGate.write(c);
     }

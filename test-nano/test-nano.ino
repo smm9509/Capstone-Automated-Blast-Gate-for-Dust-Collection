@@ -175,42 +175,32 @@ void loop() {
     if (Serial.available()) {
         if (Serial.peek() == ':') {
             Serial.read();  // consume ':'
+            char     buf[8];
+            uint8_t  n      = 0;
+            bool     got_nl = false;
             unsigned long t = millis();
-            while (!Serial.available() && millis() - t < 10) {}  // wait for command byte (~2ms at 4800 baud)
-            if (!Serial.available()) {
-                delayMicroseconds(SERIAL_SILENCE_US);
-                Serial.println(";ERR"); }
-            else switch (Serial.read()) {
+            while (!got_nl && millis() - t < 20) {
+                if (Serial.available()) {
+                    char c = Serial.read();
+                    if (c == '\n')              { got_nl = true; }
+                    else if (n < sizeof(buf)-1) { buf[n++] = c;  }
+                }
+            }
+            buf[n] = '\0';
+            delayMicroseconds(SERIAL_SILENCE_US);
+            if (!got_nl) {
+                Serial.print(";ERR timeout\n");
+            } else switch (buf[0]) {
                 case '?':
-                    while (Serial.available() && Serial.read() != '\n') {}
-                    delayMicroseconds(SERIAL_SILENCE_US);
                     Serial.print(";P" + String(WIPER.readRaw()) + "\n");
                     break;
-                case 'S': {
-                    char    buf[8];
-                    uint8_t n      = 0;
-                    bool    got_nl = false;
-                    while (n < sizeof(buf) && Serial.available()) {
-                        char c = Serial.read();
-                        if (c == '\n') { got_nl = true; break; }
-                        buf[n++] = c;
-                    }
-                    if (!got_nl) {
-                        delayMicroseconds(SERIAL_SILENCE_US);
-                        Serial.print(";command error\n"); break; }
-                    buf[n] = '\0';
-                    openPercent = atoi(buf); // store the open percent for later use when ACCESS is high
-                    //update controller
-                    //ctrl.setpointPercent = openPercent;
-                    //actually no, it's a complicated operation, the setpoint should stay 0 when ACCESS is low but be updated to the remembered value when ACCESS is high
-                    //ack
-                    delayMicroseconds(SERIAL_SILENCE_US);
+                case 'S':
+                    openPercent = atoi(buf + 1);
                     Serial.print(";S" + String(openPercent) + "\n");
-                }
+                    if (digitalRead(PIN_ACS_ACCESS) && state == IDLE) state = MOVING;
                     break;
                 default:
-                    delayMicroseconds(SERIAL_SILENCE_US);
-                    Serial.print(";invalid command\n");
+                    Serial.print(";ERR unknown\n");
             }
         } else {
             Serial.read();  // swallow noise
