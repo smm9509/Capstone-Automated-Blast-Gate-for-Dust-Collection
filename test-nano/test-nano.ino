@@ -10,9 +10,9 @@ static const uint8_t PIN_E_STOP     = 3;   // D3 — hardware interrupt
 static const uint8_t PIN_JOG_OPEN   = 4;
 static const uint8_t PIN_JOG_CLOSE  = 7;
 // LEDs NOT INSTALLED AS OF 2026-04-08, pins are floating
-static const uint8_t PIN_LED_RED    = 10;
-static const uint8_t PIN_LED_YLW    = 11;
-static const uint8_t PIN_LED_GRN    = 12;
+static const uint8_t LED_RED    = 10;
+static const uint8_t LED_YLW    = 11;
+static const uint8_t LED_GRN    = 12;
 // L298N subassembly
 static const uint8_t PIN_ENA        = 5;   // PWM — older code used 9
 static const uint8_t PIN_IN1        = 6;
@@ -21,6 +21,7 @@ static const uint8_t PIN_IN2        = 9;   // older code used 5
 static const uint8_t PIN_WIPER      = A0;
 
 static const uint32_t SERIAL_BAUD   = 4800;
+static const uint32_t SERIAL_SILENCE_US = 10e6 / SERIAL_BAUD;
 static const uint8_t  MOTOR_MIN_SPD = 80;  // physical min is ~50; 80 avoids buzzing
 
 //=============================================================================
@@ -53,6 +54,7 @@ struct MotorDriver {
         analogWrite(PIN_ENA, 0);
     }
 };
+MotorDriver    MOTOR;
 
 //=============================================================================
 // JogPins
@@ -101,62 +103,160 @@ struct PositionSensor {
         return analogRead(PIN_WIPER);
     }
 };
+PositionSensor WIPER;
+
+//=============================================================================
+// GateController  (P-loop, copied from blastGate MOVING case)
+// originally designed by Vincent, adapted by Liz
+//=============================================================================
+struct GateController {
+    uint16_t wiperMin = 110;  // fallback; replace with EEPROM cal later
+    uint16_t wiperMax = 917;
+    uint16_t setpointPercent = 0; // uninitialized setpoint, is valid if you assume ACCESS is low during startup
+    // in normal operation, setpoint will be bimodal, 0 and somewhere around 30, the second value is set over serial.
+    int      deadband = 0;
+
+    // Returns true when target is reached.
+    bool update() {
+        int currentPos = WIPER.readRaw();
+        int targetPos  = map(setpointPercent, 0, 100, wiperMin, wiperMax);
+        int error      = targetPos - currentPos;
+        int spd        = map(abs(error), 0, 100, (int)MOTOR_MIN_SPD, 255);
+        spd            = constrain(spd, (int)MOTOR_MIN_SPD, 255);
+        if      (error >  deadband) { MOTOR.drive(EXTEND,  spd); }
+        else if (error < -deadband) { MOTOR.drive(RETRACT, spd); }
+        else                        { MOTOR.stop(); return true;  }
+        return false;
+    }
+};
 
 //=============================================================================
 // ISR stubs — must be free functions; forward-declared for the instances below
 //=============================================================================
 void estopISR();
-void acsISR();
 
 //=============================================================================
-// Hardware instances
+// instances
 //=============================================================================
-MotorDriver    motor;
 JogPins        jog;
-PositionSensor wiper;
 
 InterruptInput estop = { PIN_E_STOP,     false, FALLING, estopISR };
-InterruptInput acs   = { PIN_ACS_ACCESS, false, CHANGE,  acsISR   };
 
 void estopISR() { estop.flag = true; }
-void acsISR()   { acs.flag   = true; }
+bool acs_prev = false;
 
-//=============================================================================
-// setup / loop
-//=============================================================================
+GateController ctrl;
+int  openPercent = 0; //remembers the amount to open the gate when ACCESS is high
+
+enum motorStateEnum {IDLE, MOVING, LOCKOUT, JOGGING} state, prevState;
+bool isNewState = false;
+
 void setup() {
     Serial.begin(SERIAL_BAUD);
 
     pinMode(PIN_E_STOP,     INPUT_PULLUP);
     pinMode(PIN_ACS_ACCESS, INPUT);
 
-    motor.setup();
+    MOTOR.setup();
     jog.setup();
-    wiper.setup();
+    WIPER.setup();
+    //TODO: on reboot, sticky open position if ACCESS is high, close if ACCESS is low.
     estop.setup();
-    acs.setup();
 
-    Serial.println("HAL ready");
+    Serial.print(";blast gate HAL ready\n");
 }
 
 void loop() {
     if (estop.checkAndClear()) {
-        motor.stop();
-        Serial.println("ESTOP");
-    }
-    if (acs.checkAndClear()) {
-        Serial.print("ACS edge, ACCESS=");
-        Serial.println(digitalRead(PIN_ACS_ACCESS));
+        MOTOR.stop();
+        state = LOCKOUT;
     }
 
-    if (jogOpen()) {
-        motor.drive(EXTEND, MOTOR_MIN_SPD);
-    } else if (jogClose()) {
-        motor.drive(RETRACT, MOTOR_MIN_SPD);
-    } else {
-        motor.stop();
+    if (Serial.available()) {
+        if (Serial.peek() == ':') {
+            Serial.read();  // consume ':'
+            unsigned long t = millis();
+            while (!Serial.available() && millis() - t < 10) {}  // wait for command byte (~2ms at 4800 baud)
+            if (!Serial.available()) {
+                delayMicroseconds(SERIAL_SILENCE_US);
+                Serial.println(";ERR"); }
+            else switch (Serial.read()) {
+                case '?':
+                    while (Serial.available() && Serial.read() != '\n') {}
+                    delayMicroseconds(SERIAL_SILENCE_US);
+                    Serial.print(";P" + String(WIPER.readRaw()) + "\n");
+                    break;
+                case 'S': {
+                    char    buf[8];
+                    uint8_t n      = 0;
+                    bool    got_nl = false;
+                    while (n < sizeof(buf) && Serial.available()) {
+                        char c = Serial.read();
+                        if (c == '\n') { got_nl = true; break; }
+                        buf[n++] = c;
+                    }
+                    if (!got_nl) {
+                        delayMicroseconds(SERIAL_SILENCE_US);
+                        Serial.print(";command error\n"); break; }
+                    buf[n] = '\0';
+                    openPercent = atoi(buf); // store the open percent for later use when ACCESS is high
+                    //update controller
+                    //ctrl.setpointPercent = openPercent;
+                    //actually no, it's a complicated operation, the setpoint should stay 0 when ACCESS is low but be updated to the remembered value when ACCESS is high
+                    //ack
+                    delayMicroseconds(SERIAL_SILENCE_US);
+                    Serial.print(";S" + String(openPercent) + "\n");
+                }
+                    break;
+                default:
+                    delayMicroseconds(SERIAL_SILENCE_US);
+                    Serial.print(";invalid command\n");
+            }
+        } else {
+            Serial.read();  // swallow noise
+        }
     }
 
-    Serial.println(wiper.readRaw());
-    delay(100);
+    //=========================================================================
+    // state machine
+    //=========================================================================
+    isNewState = (state != prevState);
+    switch (state) {
+        case IDLE:
+        {
+            bool acs_val = digitalRead(PIN_ACS_ACCESS);
+            if (acs_val != acs_prev) {
+                state = MOVING;
+                acs_prev = acs_val;
+            }
+            if (jogOpen() || jogClose()) state = JOGGING;
+            break;
+        }
+        case MOVING:
+            ctrl.setpointPercent = digitalRead(PIN_ACS_ACCESS) * openPercent;
+            if (ctrl.update()) state = IDLE;
+            break;
+        case JOGGING:
+            if (jogOpen()) {
+                MOTOR.drive(EXTEND, MOTOR_MIN_SPD);
+            } else if (jogClose()) {
+                MOTOR.drive(RETRACT, MOTOR_MIN_SPD);
+            } else {
+                MOTOR.stop();
+                state = IDLE;
+            }
+            //TODO: add a label that if the user wants to hold the jogged position, they should push the E-stop.
+            break;
+        case LOCKOUT:
+        default:
+            //TODO: safety logic for exiting LOCKOUT state after e-stop or obstruction
+            // blink red LED 2
+            if (millis() % 100 < 50) {
+                digitalWrite(LED_RED, HIGH);
+            } else {
+                digitalWrite(LED_RED, LOW);
+            }
+            break;
+    }
+    prevState = state;
 }

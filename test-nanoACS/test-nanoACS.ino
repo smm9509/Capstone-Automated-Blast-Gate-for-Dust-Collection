@@ -3,23 +3,26 @@
 #include <SoftwareSerial.h>
 
 #define BAUD_BENCH  115200
-#define VERSION "nanoACS v9 2026-04-14T6:43\r\n"
+#define VERSION "nanoACS v11 2026-04-15\r\n"
 #define PIN_ACCESS  4 // red wire to pin 1 of vga adapter
 #define PIN_RX      5 // "orange" (red) wire from gate Nano TX, pin 15 of VGA adapter
 #define PIN_TX      6 // green wire to gate Nano RX, pin 12 of VGA adapter
 
 const char* help =
   "Commands:\r\n"
-  "  V   -- print version string\r\n"
-  "  O   -- assert ACCESS HIGH (card present)\r\n"
-  "  C   -- deassert ACCESS LOW (card removed)\r\n"
-  "  P   -- pulse ACCESS for 5s to the opposite state\r\n"
-  "  H   -- print this help\r\n"
-  "  ?   -- query Nano wiper ADC position (forwarded)\r\n"
-  "  0-100 -- set Nano open setpoint percent (forwarded)\r\n";
+  "  V        -- print version string\r\n"
+  "  O        -- assert ACCESS HIGH (tool present)\r\n"
+  "  C        -- deassert ACCESS LOW (tool removed)\r\n"
+  "  P        -- pulse ACCESS for 5s to opposite state\r\n"
+  "  H        -- print this help\r\n"
+  "  E        -- toggle hex echo (shows raw bytes received)\r\n"
+  "Gate Nano (forwarded, framed :CMD\\n):\r\n"
+  "  :?\\n     -- query wiper ADC position\r\n"
+  "  :S<n>\\n  -- set open setpoint percent (0-100)\r\n";
 
 SoftwareSerial SerialGate(PIN_RX, PIN_TX);
 #define SerialPi Serial
+bool echo_hex = false;
 
 void setup()
 {
@@ -58,12 +61,16 @@ void loop()
       case 'H':
         SerialPi.write(help);
         break;
-      case '\r': case '\n': // don't forward line endings -- gate's parseInt() treats bare \n as 0
+      case 'E':
+        echo_hex = !echo_hex;
+        SerialPi.write(echo_hex ? "Hex echo ON\r\n" : "Hex echo OFF\r\n");
         break;
       default:
-        SerialPi.write("> ");
-        SerialPi.write(c);
-        SerialPi.write("\r\n");
+        if (echo_hex) {
+          char tmp[6];
+          sprintf(tmp, "[%02X]", (uint8_t)c);
+          SerialPi.write(tmp);
+        }
         SerialGate.write(c);
     }
   }
