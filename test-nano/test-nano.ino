@@ -142,7 +142,7 @@ JogPins        jog;
 
 InterruptInput estop = { PIN_E_STOP,     false, FALLING, estopISR };
 
-void estopISR() { estop.flag = true; }
+void estopISR() { estop.flag = false; } // ADJUSTED estop.flag to FALSE 
 bool acs_prev = false;
 
 GateController ctrl;
