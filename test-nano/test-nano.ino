@@ -9,7 +9,6 @@ static const uint8_t PIN_ACS_ACCESS = 2;   // D2 — hardware interrupt
 static const uint8_t PIN_E_STOP     = 3;   // D3 — hardware interrupt
 static const uint8_t PIN_JOG_OPEN   = 4;
 static const uint8_t PIN_JOG_CLOSE  = 7;
-// LEDs NOT INSTALLED AS OF 2026-04-08, pins are floating
 static const uint8_t LED_RED    = 10;
 static const uint8_t LED_YLW    = 11;
 static const uint8_t LED_GRN    = 12;
@@ -142,7 +141,7 @@ JogPins        jog;
 
 InterruptInput estop = { PIN_E_STOP,     false, FALLING, estopISR };
 
-void estopISR() { estop.flag = false; } // ADJUSTED estop.flag to FALSE 
+void estopISR() { estop.flag = false; } // ADJUSTED estop.flag to FALSE so that e-stop does nothing
 bool acs_prev = false;
 
 GateController ctrl;

@@ -73,7 +73,8 @@ def main():
             # sin wave
             # value = (math.sin(angle_turns * 2 * math.pi) + 1) / 2 * 100
             # square wave
-            value = 100 if angle_turns < 0.5 else 0
+            square_max, square_min = (0, 95)
+            value = square_max if angle_turns < 0.5 else square_min
 
             # send value to gate
             nanoACS.write(f":S{int(value)}\n".encode())
