@@ -113,7 +113,7 @@ struct GateController {
     uint16_t wiperMax = 917;
     uint16_t setpointPercent = 0; // uninitialized setpoint, is valid if you assume ACCESS is low during startup
     // in normal operation, setpoint will be bimodal, 0 and somewhere around 30, the second value is set over serial.
-    int      deadband = 0;
+    int      deadband = 25;
 
     // Returns true when target is reached.
     bool update() {
@@ -190,14 +190,18 @@ void loop() {
             if (!got_nl) {
                 Serial.print(";ERR timeout\n");
             } else switch (buf[0]) {
-                case '?':
+                case '?': //pot query
                     Serial.print(";P" + String(WIPER.readRaw()) + "\n");
                     break;
-                case 'S':
-                    openPercent = atoi(buf + 1);
+                case 'S':{ //setpoint
+                    int new_openPercent = atoi(buf + 1);
+                    bool change = bool(openPercent-new_openPercent); 
+                    openPercent=new_openPercent;
                     Serial.print(";S" + String(openPercent) + "\n");
-                    if (digitalRead(PIN_ACS_ACCESS) && state == IDLE) state = MOVING;
-                    break;
+                    if (digitalRead(PIN_ACS_ACCESS) && state == IDLE) {
+                        if (change) state = MOVING;
+                    }
+                    break;}
                 default:
                     Serial.print(";ERR unknown\n");
             }
@@ -213,17 +217,20 @@ void loop() {
     switch (state) {
         case IDLE:
         {
-            bool acs_val = digitalRead(PIN_ACS_ACCESS);
-            if (acs_val != acs_prev) {
+            bool access_val = digitalRead(PIN_ACS_ACCESS);
+            if (access_val != acs_prev) {
                 state = MOVING;
-                acs_prev = acs_val;
+                acs_prev = access_val;
             }
             if (jogOpen() || jogClose()) state = JOGGING;
             break;
         }
         case MOVING:
             ctrl.setpointPercent = digitalRead(PIN_ACS_ACCESS) * openPercent;
-            if (ctrl.update()) state = IDLE;
+            if (ctrl.update()) {
+                state = IDLE;
+                Serial.print(";I\n");
+            }
             break;
         case JOGGING:
             if (jogOpen()) {

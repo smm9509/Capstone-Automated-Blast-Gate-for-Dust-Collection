@@ -10,11 +10,28 @@ test_version = "0.0.3"
 
 
 class NanoACS(serial.Serial):
+    csv_monolog = None  # set after opening log file
+
+    def _readline_filtered(self) -> str:
+        """Read a line, intercepting ;I idle-transition events and logging them."""
+        while True:
+            line = self.readline().decode().strip()
+            if line == ";I":
+                now = time.monotonic_ns()
+                print(f"idle\t\t\t\t time: {now}")
+                if self.csv_monolog:
+                    self.csv_monolog.write(
+                        f"IDLE,,{now},,{datetime.datetime.now().isoformat()}\n"
+                    )
+                    self.csv_monolog.flush()
+                continue
+            return line
+
     @property
     def wiper(self) -> int:
         self.write(b":?\n")
         while True:
-            line = self.readline().decode().strip()
+            line = self._readline_filtered()
             if not line:
                 raise TimeoutError("wiper: no response from gate Nano")
             try:
@@ -48,6 +65,7 @@ def main():
         )
         # monolog, append lines to csv file
         csv_monolog = open(f"monolog_{test_version}.csv", "a")
+        nanoACS.csv_monolog = csv_monolog
 
         with open(ino) as f:
             version_full = next(
@@ -80,7 +98,7 @@ def main():
             nanoACS.write(f":S{int(value)}\n".encode())
 
             # assert that the response to the write matches the expected value
-            response = nanoACS.readline().decode().strip()
+            response = nanoACS._readline_filtered()
             assert response == f";S{int(value)}", (
                 f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
             )
