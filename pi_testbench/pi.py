@@ -28,7 +28,7 @@ class NanoACS(serial.Serial):
             return line
 
     @property
-    def wiper(self) -> int:
+    def wiper(self) -> int | None:
         self.write(b":?\n")
         while True:
             line = self._readline_filtered()
@@ -39,6 +39,9 @@ class NanoACS(serial.Serial):
                 return int(line[2:])
             except ValueError:
                 print(f"wiper skip: {line!r}")
+            except AssertionError:
+                print(f"wiper serial noise: {line!r}")
+                return None
 
 
 nanoACS = NanoACS("/dev/ttyUSB0", 115200, timeout=1)
@@ -80,7 +83,8 @@ def main():
 
         nanoACS.write(b"O")  # set ACCESS to open signal
         assert (
-            "ACCESS is now HIGH." == nanoACS.readline().decode("utf-8", errors="replace").strip()
+            "ACCESS is now HIGH."
+            == nanoACS.readline().decode("utf-8", errors="replace").strip()
         )  # ACS response which confirms the ACCESS signal was set HIGH
 
         # loop
