@@ -1,48 +1,44 @@
 // C++ code
 
 //motor position enum states
-// we should be switching to state machines as we progress
-// more robust code that will prevent future spaghetti code
 enum motorPos {IDLE, MOVING, ESTOP} state, prevState;
-volatile bool isNewState; //checks if state changes
-volatile bool estopPressed = false;  //estop state
+volatile bool isNewState;
+volatile bool estopPressed = false;
 int targetPercent;
 int targetPos;
 int currentPos = 0;
 int currentPercent = 0;
-const int minSpeed = 80; //physical minimum is 50 but it buzzes so 80 is safer
+const int minSpeed = 80;
 int error;
 int speed;
 const int deadband = 0;
-//int kp = 1.5;
-const int maxVelocity = 4000; //max velocity, assume constant, ignore static pressure loss
-const int maxCFM = 1200; //max CFM with ALL GATES OPEN
-const float maxArea = 143.73; //143.73 is total effective area from all diameter calculations
+const int maxCFM = 1200;
+const float maxArea = 143.73;
 
 int activeGates;
 
-int CFMreq[6] = {400, 350, 300, 350, 350, 450}; //bandsaw, belt sander, spindle sandar, planar, tablesaw, floor sweep
+int CFMreq[6] = {400, 350, 300, 350, 350, 450}; //bandsaw, belt sander, spindle sander, planar, tablesaw, floor sweep
 int diameter[6] = {5, 6, 6, 6, 5, 5};
-float ductArea[6] = {19.64, 28.27, 28.27, 28.27, 19.64, 19.64}; //in inches, because max area is inches and i only need it as a ratio
-float qFull[6] = {545.55, 785.27, 785.27, 785.27, 545.55, 545.55}; //CFM for each gate when it is fully open
+float ductArea[6] = {19.64, 28.27, 28.27, 28.27, 19.64, 19.64}; //area of blast gate in inches
+float qFull[6] = {545.55, 785.27, 785.27, 785.27, 545.55, 545.55}; //q = 4000 * A = Cubic feet per inch
 
 uint8_t currentPacket;
 uint8_t previousPacket = 0;
 
-void estopISR() //handler for estop interrupt
+void estopISR()
 {
-  estopPressed = true; //triggers interrupt flag
+  estopPressed = true;
 }
 void motorExtend(int speed)
 {
-  digitalWrite(5, LOW); 
-  digitalWrite(6, HIGH); //extends motor forward
+  digitalWrite(5, LOW);
+  digitalWrite(6, HIGH);
   analogWrite(9, speed);
 }
 void motorRetract(int speed)
 {
-  digitalWrite(5, HIGH); //retracts motor backward
-  digitalWrite(6, LOW); 
+  digitalWrite(5, HIGH);
+  digitalWrite(6, LOW);
   analogWrite(9, speed);
 }
 void motorStop()
@@ -52,125 +48,142 @@ void motorStop()
   analogWrite(9, 0);
 }
 
-float qDevice(uint8_t currentPacket, int newGateIndex)
+float qDevice(uint8_t packet, int gateIndex)
 {
-  float currentArea = 0.0;
+  float qDemand = 0.0;
   float allGateWeight = 0.0;
-  for (int i = 0; i < 6; i++) //cycles through size of array
+  //qDemand will decide if system is sufficient/starved
+  //allGateWeight will be used for distribution if system is starved
+
+  //calculates total demand of all the gates
+  for (int i = 0; i < 6; i++)
   {
-    if (bitRead(currentPacket, i)) //outputs true if bit is 1
+    if (bitRead(packet, i))
     {
-      currentArea += ductArea[i]; 
-      allGateWeight += CFMreq[i] * ductArea[i]; //weighted sum using cfmreq and ductarea for all the gates
+      qDemand += qFull[i]; //for each active gate open, add their max capacity to qDemand, aka their CFM at 100%
+      allGateWeight += CFMreq[i]; //adds each CFMrequirement, I realize we only care about CFMreq and NOT area
     }
   }
-  float qtotalCurrent = maxCFM * (currentArea/maxArea);  //calculates current cfm using proportion of area
-  float newGateWeight = CFMreq[newGateIndex] * ductArea[newGateIndex];
-  float qNewGate = qtotalCurrent * (newGateWeight/allGateWeight);
-  return qNewGate;
+  if (allGateWeight == 0) return 0.0; //prevent dividing by zero
+
+  //if total demand is less than max CFM, our system is sufficient, will tell new gate to move to their full capacity aka 100% position
+  if (qDemand <= maxCFM) 
+  {
+    return qFull[gateIndex];
+  }
+  else //trigger starvation balancing, qDemand > maxCFM BUT totalCFMreq < maxCFM, it can still operate but has to distribute
+  {
+    float newGateWeight = CFMreq[gateIndex]; //takes in CFMreq of new gate
+    return maxCFM * (newGateWeight / allGateWeight); //distributes maxCFM comparing cfmrequirements of each gate
+  } 
 }
-bool packetTest(uint8_t currentPacket)
+
+bool packetTest(uint8_t packet) //packet is valid ONLY if each gate's calculated CFM is greater than its CFMREQ
 {
-  for (int i = 0; i < 6; i++) //cycles through all active gates in packet and makes sure each of them can get their required CFM
+  for (int i = 0; i < 6; i++)
   {
-    if (bitRead(currentPacket, i))
+    if (bitRead(packet, i))
     {
-      if (qDevice(currentPacket, i) < CFMreq[i]) //any of the open gates receive less than required, return false
-      return false; 
+      if (qDevice(packet, i) < CFMreq[i]) //if any gate calculation goes below CFMreq, reject packet
+        return false;
     }
   }
-  return true; //else this is a valid packet
+  return true;
 }
+
 int newGateIndex(uint8_t newGate)
 {
   for (int i = 0; i < 6; i++)
   {
-    if bitRead(newGate, i)
-    return i;
+    if (bitRead(newGate, i)) //finds the index of the newgate and returns it
+      return i;
   }
   return -1;
 }
+
 void setup()
 {
-  Serial.begin(115200); //baud rate of ESP32
-  pinMode(2, INPUT_PULLUP); //moved LEDS to other pins, 2 and 3 have hardware interrupt which we need
-  attachInterrupt(digitalPinToInterrupt(2), estopISR, FALLING); //enables hardware interrupt on 2, falling edge, triggers estop ISR
-  pinMode(10, OUTPUT); //RED LED BACKWARD
-  pinMode(11, OUTPUT); //YELLOW LED IDLE
-  pinMode(12, OUTPUT); //GREEN LED FORWARD
-  pinMode(5, OUTPUT); //negative motor term
-  pinMode(6, OUTPUT); //positive motor term
-  pinMode(9, OUTPUT); //pwm pin
-  pinMode(A0, INPUT); //potentiometer reading pin
+  Serial.begin(115200, SERIAL_8N1);
+  pinMode(2, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(2), estopISR, FALLING);
+  //pinMode(10, OUTPUT); //RED LED
+  //pinMode(11, OUTPUT); //YELLOW LED
+  //pinMode(12, OUTPUT); //GREEN LED
+  pinMode(5, OUTPUT);  //negative motor term
+  pinMode(6, OUTPUT);  //positive motor term
+  pinMode(9, OUTPUT);  //pwm pin
+  pinMode(A0, INPUT);  //potentiometer
 
-  state = IDLE; //sets initial state at origin
-  prevState = ESTOP; //arbitrary prevState
+  state = IDLE;
+  prevState = ESTOP;
 }
 
 void loop()
 {
   if (estopPressed)
   {
-    state = ESTOP; //goes into estop state
+    state = ESTOP;
   }
   isNewState = (state != prevState);
   switch (state)
   {
     case IDLE:
+      if (isNewState) Serial.println("Waiting for packet...");
       if (Serial.available())
       {
-        currentPacket = Serial.read();
-        if (packetTest(currentPacket)) //tests if currentPacket will overload CFMreq
+        currentPacket = Serial.read(); 
+        if (packetTest(currentPacket))
         {
-          uint8_t newGate = currentPacket & ~previousPacket; //singles out only gates that turned on
-          int deviceID = newGateIndex(newGate);
-          if (deviceID != -1)
+          uint8_t newGate = currentPacket & ~previousPacket; //finds the different bit of the current vs previous
+          int deviceID = newGateIndex(newGate); //finds ID of the different bit aka newGate
+          if (deviceID != -1) 
           {
-          targetPercent = 100 * (qDevice(currentPacket, deviceID)/qFull[deviceID]);
-          targetPercent = constrain(targetPercent, 0, 100); //clamps targetPercent to a range
-          targetPos = map(targetPercent, 0, 100,  0, 1023); //maps the percent given to an analog reading 0-1023
-
-          Serial.print("Percent set:");
-          Serial.println(targetPercent); //print target percent
-
-          Serial.print("Position set:");
-          Serial.println(targetPos); //print target pos
-
-          previousPacket = currentPacket;
-          state = MOVING; //goes to moving section
+            float q = qDevice(currentPacket, deviceID); //calculates the flow of current gate
+            targetPercent = 100.0 * (q / qFull[deviceID]); //finds the targetpercent needed to reach that flow
+            targetPercent = constrain(targetPercent, 0, 100); 
+            targetPos = map(targetPercent, 0, 100, 0, 1023);
+            previousPacket = currentPacket;
+            state = MOVING;
           }
         }
+        else Serial.println("PACKET REJECTED: System Overload, New Gate exceeds CFM requirements");
       }
       break;
+      
     case MOVING:
-      error = targetPos - currentPos; //error is difference between target and current for controls, doubles as a comparison, + = extend, - = retract
-      speed = map(abs(error), 0, 100, minSpeed, 255); //proportional speed to error distance, P
-      //usually 1023 but i put 100 so that it goes max speed thne slows down when it gets closer instead of gradual
-      speed = constrain(speed, minSpeed, 255); //safety constraint
-      if (error > deadband) //targetpos is greater than currentpos, extend, deadband for small errors
+      error = targetPos - currentPos;
+      speed = map(abs(error), 0, 100, minSpeed, 255);
+      speed = constrain(speed, minSpeed, 255);
+      if (error > deadband)
       {
-        motorExtend(speed); //keeps extending until current reaches target
+        motorExtend(speed);
       }
-      else if (error < -deadband) //targetpos is less than currentpos, retract
+      else if (error < -deadband)
       {
-        motorRetract(speed); //keeps retracting until current reaches target  
+        motorRetract(speed);
       }
       else
       {
-        motorStop(); //stop motor
-        state = IDLE; //wait for next command
+        motorStop();
+        state = IDLE;
       }
       break;
+
     case ESTOP:
       if (currentPos > 0)
       {
-        motorRetract(255); //retract all the way back to start
+        motorRetract(255);
+      }
+      else 
+      {
+        motorStop();
+        estopPressed = false;
       }
       break;
     default: state = IDLE;
   }
-  prevState = state; //changes state to previous
-
-  currentPos = analogRead(A0); //position reading, analog 0 - 1023
-  currentPercent = map(currentPos, 0, 1023, 0, 100); //percent reading, changes current to percent reading (debug for now)
+  prevState = state;
+  currentPos = analogRead(A0);
+  currentPercent = map(currentPos, 0, 1023, 0, 100);
+}
 }
