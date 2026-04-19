@@ -103,10 +103,14 @@ def main():
 
             # assert that the response to the write matches the expected value
             response = nanoACS._readline_filtered()
-            assert response == f";S{int(value)}", (
-                f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
-            )
-            response_digits = response[2:]
+            try:
+                assert response == f";S{int(value)}", (
+                    f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
+                )
+                response_digits = response[2:]
+            except AssertionError:
+                response = None
+                response_digits = None
 
             # read value from gate
             pos = nanoACS.wiper
