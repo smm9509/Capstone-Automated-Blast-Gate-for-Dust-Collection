@@ -15,7 +15,7 @@ class NanoACS(serial.Serial):
     def _readline_filtered(self) -> str:
         """Read a line, intercepting ;I idle-transition events and logging them."""
         while True:
-            line = self.readline().decode().strip()
+            line = self.readline().decode("utf-8", errors="replace").strip()
             if line == ";I":
                 now = time.monotonic_ns()
                 print(f"idle\t\t\t\t time: {now}")
@@ -73,14 +73,14 @@ def main():
             )
             version = version_full.split("\\")[0]
         nanoACS.write(b"V")
-        response = nanoACS.readline().decode().strip()
+        response = nanoACS.readline().decode("utf-8", errors="replace").strip()
         assert response == version.strip(), (
             f"Version mismatch: got {response!r}, expected {version.strip()!r}"
         )
 
         nanoACS.write(b"O")  # set ACCESS to open signal
         assert (
-            "ACCESS is now HIGH." == nanoACS.readline().strip().decode()
+            "ACCESS is now HIGH." == nanoACS.readline().decode("utf-8", errors="replace").strip()
         )  # ACS response which confirms the ACCESS signal was set HIGH
 
         # loop
