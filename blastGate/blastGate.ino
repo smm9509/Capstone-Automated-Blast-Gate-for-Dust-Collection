@@ -116,8 +116,8 @@ void setup()
       wiperMax = cal.maxVal;
     } else {
       if(COMPILETIME_CALIBRATION) {
-        wiperMin = 110;
-        wiperMax = 917;
+        wiperMin = 145;
+        wiperMax = 660;
       } else {
         //TODO: get the user's attention that calibration is needed. Even if serial is not connected.
         // LEDs? Morse code C on the builtin LED?
