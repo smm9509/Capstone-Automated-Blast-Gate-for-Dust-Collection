@@ -6,7 +6,7 @@ import time
 
 import serial
 
-test_version = "0.0.4"
+test_version = "0.0.6_shortpot"
 
 
 class NanoACS(serial.Serial):
