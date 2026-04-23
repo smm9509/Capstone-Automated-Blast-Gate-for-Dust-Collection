@@ -1,2 +1,4 @@
 *.csv
 monolog*
+pi.py
+state.json

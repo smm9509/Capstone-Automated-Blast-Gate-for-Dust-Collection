@@ -16,7 +16,6 @@ On Windows: `.venv\Scripts\activate`
 ## Usage
 
 ```bash
-cd plot-analysis
-source .venv/bin/activate
-python analyze.py
+source plot-analysis/.venv/bin/activate
+python plot-analysis/analyze.py
 ```
