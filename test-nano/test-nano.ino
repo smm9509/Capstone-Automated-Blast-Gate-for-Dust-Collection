@@ -110,7 +110,7 @@ PositionSensor WIPER;
 //=============================================================================
 struct GateController {
     uint16_t wiperMin = 0;  // fallback; replace with EEPROM cal later
-    uint16_t wiperMax = 1023;  
+    uint16_t wiperMax = 1023;   
     uint16_t setpointPercent = 0; // uninitialized setpoint, is valid if you assume ACCESS is low during startup
     // in normal operation, setpoint will be bimodal, 0 and somewhere around 30, the second value is set over serial.
     int      deadband = 25;
