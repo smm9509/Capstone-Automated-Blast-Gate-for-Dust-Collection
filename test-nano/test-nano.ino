@@ -110,7 +110,7 @@ PositionSensor WIPER;
 //=============================================================================
 struct GateController {
     uint16_t wiperMin = 0;  // fallback; replace with EEPROM cal later
-    uint16_t wiperMax = 1023;   
+    uint16_t wiperMax = 1023;
     uint16_t setpointPercent = 0; // uninitialized setpoint, is valid if you assume ACCESS is low during startup
     // in normal operation, setpoint will be bimodal, 0 and somewhere around 30, the second value is set over serial.
     int      deadband = 25;
@@ -126,6 +126,76 @@ struct GateController {
         else if (error < -deadband) { MOTOR.drive(RETRACT, spd); }
         else                        { MOTOR.stop(); return true;  }
         return false;
+    }
+};
+
+struct Balancer {
+    const int maxCFM = 1200;
+    int activeGates;
+
+    int   CFMreq[6]   = {400, 350, 300, 350, 350, 450}; // bandsaw, belt sander, spindle sander, planer, tablesaw, floor sweep
+    int   diameter[6] = {5, 6, 6, 6, 5, 5};
+    float ductArea[6] = {19.64, 28.27, 28.27, 28.27, 19.64, 19.64}; // area of blast gate in sq inches
+    float qFull[6]    = {545.55, 785.27, 785.27, 785.27, 545.55, 545.55}; // q = 4000 * A, CFM at 100% open
+
+    uint8_t currentPacket;
+    uint8_t previousPacket = 0;
+
+    // Returns the CFM this gate should carry given which gates are open.
+    // If total demand fits within maxCFM, gate gets full flow; otherwise distributes by CFMreq weight.
+    float qDevice(uint8_t packet, int gateIndex) {
+        float qDemand = 0.0;
+        float allGateWeight = 0.0;
+        for (int i = 0; i < 6; i++) {
+            if (bitRead(packet, i)) {
+                qDemand      += qFull[i];
+                allGateWeight += CFMreq[i];
+            }
+        }
+        if (allGateWeight == 0) return 0.0;
+        if (qDemand <= maxCFM) {
+            return qFull[gateIndex];
+        } else {
+            float newGateWeight = CFMreq[gateIndex];
+            return maxCFM * (newGateWeight / allGateWeight);
+        }
+    }
+
+    // Returns false if any active gate would receive less than its CFMreq.
+    bool packetTest(uint8_t packet) {
+        for (int i = 0; i < 6; i++) {
+            if (bitRead(packet, i)) {
+                if (qDevice(packet, i) < CFMreq[i])
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    int newGateIndex(uint8_t newGate) {
+        for (int i = 0; i < 6; i++) {
+            if (bitRead(newGate, i))
+                return i;
+        }
+        return -1;
+    }
+
+    void handleSerial() {
+        currentPacket = ; //TODO: read from Serial
+        if (packetTest(currentPacket)) {
+            uint8_t newGate  = currentPacket & ~previousPacket;
+            int     deviceID = newGateIndex(newGate);
+            if (deviceID != -1) {
+                float q       = qDevice(currentPacket, deviceID);
+                targetPercent = 100.0 * (q / qFull[deviceID]);
+                targetPercent = constrain(targetPercent, 0, 100);
+                targetPos     = map(targetPercent, 0, 100, 0, 1023);
+                previousPacket = currentPacket;
+                state = MOVING;
+            }
+        } else {
+            Serial.println("PACKET REJECTED: System Overload, New Gate exceeds CFM requirements");
+        }
     }
 };
 
@@ -195,7 +265,7 @@ void loop() {
                     break;
                 case 'S':{ //setpoint
                     int new_openPercent = atoi(buf + 1);
-                    bool change = bool(openPercent-new_openPercent); 
+                    bool change = bool(openPercent-new_openPercent);
                     openPercent=new_openPercent;
                     Serial.print(";S" + String(openPercent) + "\n");
                     if (digitalRead(PIN_ACS_ACCESS) && state == IDLE) {
