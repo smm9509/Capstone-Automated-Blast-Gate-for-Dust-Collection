@@ -23,6 +23,11 @@ static const uint32_t SERIAL_BAUD   = 4800;
 static const uint32_t SERIAL_SILENCE_US = 10e6 / SERIAL_BAUD;
 static const uint8_t  MOTOR_MIN_SPD = 80;  // physical min is ~50; 80 avoids buzzing
 
+
+enum motorStateEnum {IDLE, MOVING, LOCKOUT, JOGGING} state, prevState;
+
+
+
 //=============================================================================
 // MotorDriver
 //=============================================================================
@@ -129,8 +134,12 @@ struct GateController {
     }
 };
 
+
+extern int openPercent;
+extern motorStateEnum state;
 struct Balancer {
     const int maxCFM = 1200;
+    uint8_t gateIndex = 0;  // this device's slot in the 6-gate array (0–5)
     int activeGates;
 
     int   CFMreq[6]   = {400, 350, 300, 350, 350, 450}; // bandsaw, belt sander, spindle sander, planer, tablesaw, floor sweep
@@ -143,7 +152,7 @@ struct Balancer {
 
     // Returns the CFM this gate should carry given which gates are open.
     // If total demand fits within maxCFM, gate gets full flow; otherwise distributes by CFMreq weight.
-    float qDevice(uint8_t packet, int gateIndex) {
+    float qDevice(uint8_t packet, int idx) {
         float qDemand = 0.0;
         float allGateWeight = 0.0;
         for (int i = 0; i < 6; i++) {
@@ -154,9 +163,9 @@ struct Balancer {
         }
         if (allGateWeight == 0) return 0.0;
         if (qDemand <= maxCFM) {
-            return qFull[gateIndex];
+            return qFull[idx];
         } else {
-            float newGateWeight = CFMreq[gateIndex];
+            float newGateWeight = CFMreq[idx];
             return maxCFM * (newGateWeight / allGateWeight);
         }
     }
@@ -180,21 +189,20 @@ struct Balancer {
         return -1;
     }
 
-    void handleSerial() {
-        currentPacket = ; //TODO: read from Serial
+    void process(uint8_t packet) {
+        currentPacket = packet;
         if (packetTest(currentPacket)) {
             uint8_t newGate  = currentPacket & ~previousPacket;
             int     deviceID = newGateIndex(newGate);
             if (deviceID != -1) {
-                float q       = qDevice(currentPacket, deviceID);
-                targetPercent = 100.0 * (q / qFull[deviceID]);
-                targetPercent = constrain(targetPercent, 0, 100);
-                targetPos     = map(targetPercent, 0, 100, 0, 1023);
+                float q     = qDevice(currentPacket, deviceID);
+                openPercent = 100.0 * (q / qFull[deviceID]);
+                openPercent = constrain(openPercent, 0, 100);
                 previousPacket = currentPacket;
                 state = MOVING;
             }
         } else {
-            Serial.println("PACKET REJECTED: System Overload, New Gate exceeds CFM requirements");
+            Serial.print(";ERR overload\n");
         }
     }
 };
@@ -215,9 +223,9 @@ void estopISR() { estop.flag = false; } // ADJUSTED estop.flag to FALSE so that 
 bool acs_prev = false;
 
 GateController ctrl;
+Balancer       balancer;   // gateIndex defaults to 0; set per device before flashing
 int  openPercent = 0; //remembers the amount to open the gate when ACCESS is high
 
-enum motorStateEnum {IDLE, MOVING, LOCKOUT, JOGGING} state, prevState;
 bool isNewState = false;
 
 void setup() {
@@ -244,7 +252,7 @@ void loop() {
     if (Serial.available()) {
         if (Serial.peek() == ':') {
             Serial.read();  // consume ':'
-            char     buf[8];
+            char     buf[12];
             uint8_t  n      = 0;
             bool     got_nl = false;
             unsigned long t = millis();
@@ -272,6 +280,17 @@ void loop() {
                         if (change) state = MOVING;
                     }
                     break;}
+                case 'G': { // active-gates bitmask, e.g. :G0b001011\n
+                    if (buf[1] != '0' || buf[2] != 'b') {
+                        Serial.print(";ERR bad format\n");
+                        break;
+                    }
+                    uint8_t packet = 0;
+                    for (int i = 0; i < 6; i++) {
+                        if (buf[3 + i] == '1') packet |= (1 << i);
+                    }
+                    balancer.process(packet);
+                    break;}
                 default:
                     Serial.print(";ERR unknown\n");
             }
@@ -287,11 +306,13 @@ void loop() {
     switch (state) {
         case IDLE:
         {
-            bool access_val = digitalRead(PIN_ACS_ACCESS);
-            if (access_val != acs_prev) {
+            bool access_now = digitalRead(PIN_ACS_ACCESS);
+            if (acs_prev && !access_now) {   // falling edge: machine off, close immediately
+                openPercent = 0;
                 state = MOVING;
-                acs_prev = access_val;
             }
+            // rising edge: do nothing — ACS will send :G packet
+            acs_prev = access_now;
             if (jogOpen() || jogClose()) state = JOGGING;
             break;
         }
