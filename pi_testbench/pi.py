@@ -6,7 +6,7 @@ import time
 
 import serial
 
-test_version = "0.0.7_shortpot"
+test_version = "0.0.8"
 DO_SETPOINT = False
 
 
