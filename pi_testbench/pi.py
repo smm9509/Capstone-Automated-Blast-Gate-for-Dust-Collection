@@ -7,6 +7,7 @@ import time
 import serial
 
 test_version = "0.0.7_shortpot"
+DO_SETPOINT = False
 
 
 class NanoACS(serial.Serial):
@@ -90,25 +91,30 @@ def main():
         # loop
         while True:
             now = time.monotonic_ns()
-            PERIOD = 10e9  # 10 seconds
-            angle_turns = (now % PERIOD) / PERIOD
-            # sin wave
-            # value = (math.sin(angle_turns * 2 * math.pi) + 1) / 2 * 100
-            # square wave
-            square_max, square_min = (5, 70)
-            value = square_max if angle_turns < 0.5 else square_min
+            if DO_SETPOINT:
+                PERIOD = 10e9  # 10 seconds
+                angle_turns = (now % PERIOD) / PERIOD
+                # sin wave
+                # value = (math.sin(angle_turns * 2 * math.pi) + 1) / 2 * 100
+                # square wave
+                square_max, square_min = (5, 70)
+                value = square_max if angle_turns < 0.5 else square_min
 
-            # send value to gate
-            nanoACS.write(f":S{int(value)}\n".encode())
+                # send value to gate
+                nanoACS.write(f":S{int(value)}\n".encode())
 
-            # assert that the response to the write matches the expected value
-            response = nanoACS._readline_filtered()
-            try:
-                assert response == f";S{int(value)}", (
-                    f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
-                )
-                response_digits = response[2:]
-            except AssertionError:
+                # assert that the response to the write matches the expected value
+                response = nanoACS._readline_filtered()
+                try:
+                    assert response == f";S{int(value)}", (
+                        f"Write response mismatch: got {response!r}, expected ;S{int(value)}"
+                    )
+                    response_digits = response[2:]
+                except AssertionError:
+                    response = None
+                    response_digits = None
+            else:
+                angle_turns = None
                 response = None
                 response_digits = None
 
