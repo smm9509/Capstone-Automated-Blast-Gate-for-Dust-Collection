@@ -120,12 +120,13 @@ def main():
 
             # read value from gate
             pos = nanoACS.wiper
+            phase_str = f"{angle_turns:.2f}" if angle_turns is not None else "N/A"
             print(  # debug info should probably also be saved to csv log
-                f"pos: {pos}\t set: {response} \t time: {now} \t phase: {
-                    angle_turns:.2f}"
+                f"pos: {pos}\t set: {response} \t time: {now} \t phase: {phase_str}"
             )
+            phase_csv = f"{angle_turns:.2f}" if angle_turns is not None else ""
             csv_monolog.write(
-                f"{pos},{response_digits},{now},{angle_turns:.2f},{
+                f"{pos},{response_digits},{now},{phase_csv},{
                     datetime.datetime.now().isoformat()
                 }\n"
             )
